@@ -2,11 +2,44 @@ use async_std::{
     fs::{create_dir_all, File},
     io::{prelude::BufReadExt, BufReader},
     path::PathBuf,
+    task,
 };
 use std::str::FromStr;
 
+pub struct ConfigFile(BufReader<File>);
+
+impl ConfigFile {
+    #[inline]
+    pub async fn from_args(n: usize) -> Option<(PathBuf, Self)> {
+        let path = path_from_args(n).await;
+        File::open(&path)
+            .await
+            .ok()
+            .map(|file| (path, Self(BufReader::new(file))))
+    }
+}
+
+impl Iterator for ConfigFile {
+    type Item = (String, String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut line = String::new();
+        loop {
+            match task::block_on(self.0.read_line(&mut line)) {
+                Ok(n) if n > 0 => {
+                    if let Some(pair) = parse_line(line.trim_end()) {
+                        break Some(pair);
+                    }
+                    line.clear();
+                }
+                _ => break None,
+            }
+        }
+    }
+}
+
 /// 从命令行参数解析配置文件地址
-pub async fn path_from_args(n: usize) -> PathBuf {
+async fn path_from_args(n: usize) -> PathBuf {
     if let Some(path) = std::env::args()
         .nth(n)
         .and_then(|path| PathBuf::from_str(&path).ok())
@@ -16,23 +49,6 @@ pub async fn path_from_args(n: usize) -> PathBuf {
         }
     }
     std::env::current_exe().unwrap().parent().unwrap().into()
-}
-
-/// 读取配置文件
-pub async fn read(path: PathBuf, mut f: impl FnMut((String, String))) {
-    if let Ok(file) = File::open(path).await {
-        let mut reader = BufReader::new(file);
-        let mut line = String::new();
-        loop {
-            match reader.read_line(&mut line).await {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    parse_line(line.trim_end()).map(&mut f);
-                    line.clear();
-                }
-            }
-        }
-    }
 }
 
 /// 解析配置文件行

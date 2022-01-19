@@ -10,9 +10,9 @@ pub struct ConfigFile(BufReader<File>);
 
 impl ConfigFile {
     #[inline]
-    pub async fn from_args(n: usize) -> Option<(PathBuf, Self)> {
+    pub async fn from_args(n: usize, file_name: &str) -> Option<(PathBuf, Self)> {
         let path = path_from_args(n).await;
-        File::open(&path)
+        File::open(path.join(file_name))
             .await
             .ok()
             .map(|file| (path, Self(BufReader::new(file))))
